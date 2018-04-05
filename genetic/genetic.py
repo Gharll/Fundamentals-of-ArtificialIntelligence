@@ -1,14 +1,16 @@
 import random
 import copy
 
-class config:
-    POPULATION_SIZE = 8
-    CHROMOSOME_MAX_LEN = 7
-    CROSSOVER_PROBABILITY = 0.9
-    MUTATION_PROBABILITY = 0.2
+class Config:
+    POPULATION_SIZE = 50
+    MAX_GENERATION = 50
+    CHROMOSOME_MAX_LEN = 8
+    CROSSOVER_PROBABILITY = 0.4
+    MUTATION_PROBABILITY = 0.05
+
 
 class Chromosome:
-    MAX_LEN = config.CHROMOSOME_MAX_LEN;
+    MAX_LEN = Config.CHROMOSOME_MAX_LEN
     start_id = 1
     id = start_id
 
@@ -23,8 +25,8 @@ class Chromosome:
 
     @staticmethod
     def rand_locus():
-        locus = random.randint(1, Chromosome.MAX_LEN - 1)
-        return locus;
+        locus = random.randint(1, Chromosome.MAX_LEN - 2)
+        return locus
 
     def allelles_to_str(self):
         s = ""
@@ -42,23 +44,28 @@ class Chromosome:
 
 class Population:
 
-    def __init__(self, size: int):
+    def __init__(self, size: int = 0):
         self.size = size
         self.stored_chromosome = []
         for i in range(0, size):
             self.stored_chromosome.append(Chromosome())
-
-        self.stored_chromosome.sort(key=lambda x: x.adaptation, reverse=True)
+        self.sort()
 
     def add(self, chromosome: Chromosome):
         self.size += 1
         self.stored_chromosome.append(chromosome)
+
+    def get(self, index: int):
+        return self.stored_chromosome[index]
 
     def __str__(self):
         s = ""
         for i in range(0, self.size):
             s += str(self.stored_chromosome[i]) + "\n"
         return s
+
+    def sort(self):
+        self.stored_chromosome.sort(key=lambda x: x.adaptation, reverse=True)
 
 class Roulette:
 
@@ -71,11 +78,17 @@ class Roulette:
         self.scope = [None] * (population.size + 1)
         self.max_scope = 0
         self.calculate_scope()
+        self.rand()
+        self.posterity.sort()
 
     def calculate_adaptation_sum(self):
         for chromosome in self.population.stored_chromosome:
             self.adaptation_sum += chromosome.adaptation
 
+    """
+    Scope is calculating for given chromosome to specify how 
+    much 'space' takes in the roulette
+    """
     def calculate_scope(self):
         itr = 0
         sum = 0
@@ -105,64 +118,161 @@ class Roulette:
                 self.posterity.add(self.population.stored_chromosome[i])
                 break
 
-class Crossover:
+
+class Genetic:
 
     def __init__(self, population:Population):
         self.population = population
-        self.crossed_population = Population(config.POPULATION_SIZE)
+        self.crossed_population = Population()
+        self.crossed_pair_list = []
+        self.mutated_chromosome_list = []
+        self.stored_id = list(range(0, self.population.size))
+        self.run_algorithm()
 
-        stored_id = list(range(Chromosome.start_id, self.population.size))
-        for i in range(0, population.size):
-            random_number = random.uniform(0, 1)
-            locus = Chromosome.rand_locus();
+    def run_algorithm(self):
+        max_step = int(len(self.stored_id)/2)
+        for i in range(0, max_step):
+            first_chromosome = self.get_random_chromosome()
+            second_chromosome = self.get_random_chromosome()
 
-            if len(stored_id) < 2:
+            self.check_cross(first_chromosome, second_chromosome)
+            self.check_mutation(first_chromosome)
+            self.check_mutation(second_chromosome)
+
+            if len(self.stored_id) == 1:
+                chromosome = self.population.get(0)
+                self.crossed_population.add(chromosome)
+                self.check_mutation(chromosome)
+                self.crossed_population.sort()
                 break
 
-            first_chromosome_id = stored_id[random.randint(0, len(stored_id)-1)]
-            stored_id.remove(first_chromosome_id)
-            second_chromosome_id = stored_id[random.randint(0, len(stored_id)-1)]
-            stored_id.remove(second_chromosome_id)
+        self.crossed_population.sort()
 
-            if random_number < config.CROSSOVER_PROBABILITY:
-                first_chromosome = self.population.stored_chromosome[first_chromosome_id]
-                second_chromosome = self.population.stored_chromosome[second_chromosome_id]
-                self.crossing(first_chromosome, second_chromosome)
-                self.crossed_population.stored_chromosome.append(first_chromosome)
-                self.crossed_population.stored_chromosome.append(second_chromosome)
+    def get_random_chromosome(self):
+        max_index = len(self.stored_id) - 1
+        random_index = random.randint(0, max_index)
+        chromosome_index = self.stored_id[random_index]
+        self.stored_id.remove(chromosome_index)
 
-            random_number = random.uniform(0,1)
-            if random_number < config.MUTATION_PROBABILITY:
-                self.mutation(first_chromosome)
+        return self.population.get(chromosome_index)
 
-            random_number = random.uniform(0, 1)
-            if random_number < config.MUTATION_PROBABILITY:
-                self.mutation(second_chromosome)
+    def check_cross(self, first_chromosome: Chromosome, second_chromosome: Chromosome):
+        random_number = random.uniform(0, 1)
+        if random_number < Config.CROSSOVER_PROBABILITY:
+            crossed_pair = CrossedPair(first_chromosome, second_chromosome)
+            first_chromosome = crossed_pair.first_chromosome_result
+            second_chromosome = crossed_pair.second_chromosome_result
+            self.crossed_pair_list.append(crossed_pair)
 
+        self.crossed_population.add(first_chromosome)
+        self.crossed_population.add(second_chromosome)
+
+    def check_mutation(self, chromosome: Chromosome):
+        random_number = random.uniform(0, 1)
+        if random_number < Config.MUTATION_PROBABILITY:
+            mutated_chromosome = MutatedChromosome(chromosome)
+            self.mutated_chromosome_list.append(mutated_chromosome)
+
+
+class CrossedPair:
+
+    def __init__(self, first_chromosome: Chromosome, second_chromosome: Chromosome):
+        self.locus = Chromosome.rand_locus()
+        self.first_chromosome: Chromosome = first_chromosome
+        self.second_chromosome: Chromosome = second_chromosome
+        self.first_chromosome_result: Chromosome = None
+        self.second_chromosome_result: Chromosome = None
+        self.crossing(first_chromosome, second_chromosome)
 
     def crossing(self, first_chromosome: Chromosome, second_chromosome: Chromosome):
-        tmp = copy.deepcopy(first_chromosome);
-        locus = Chromosome.rand_locus()
-        for i in range(locus, Chromosome.MAX_LEN):
-            first_chromosome.alleles[i] = second_chromosome.alleles[i]
-            second_chromosome.alleles[i] = tmp.alleles[i]
+        self.first_chromosome_result = copy.deepcopy(first_chromosome)
+        self.second_chromosome_result = copy.deepcopy(second_chromosome)
+
+        tmp = copy.deepcopy(self.first_chromosome_result)
+        for i in range(self.locus, Chromosome.MAX_LEN):
+            self.first_chromosome_result.alleles[i] = self.second_chromosome_result.alleles[i]
+            self.second_chromosome_result.alleles[i] = tmp.alleles[i]
+        self.first_chromosome_result.adaptation_assessment()
+        self.second_chromosome_result.adaptation_assessment()
+
+    def chromosome_with_locus_str(self, chromosome):
+        alleles_with_locus_str = ""
+        for i in range(0, Chromosome.MAX_LEN):
+            alleles_with_locus_str += str(chromosome.alleles[i])
+            if i == self.locus:
+                alleles_with_locus_str += "|"
+
+        return 'Chromosome id {chromosome.id} {alleles_with_locus_str} Adaptation: {chromosome.adaptation}'\
+            .format(chromosome=chromosome, alleles_with_locus_str=alleles_with_locus_str)
+
+    def __str__(self):
+        s = "\nLocus: {self.locus}\n".format(self=self)
+        s += self.chromosome_with_locus_str(self.first_chromosome) + "\n"
+        s += self.chromosome_with_locus_str(self.second_chromosome) + "\n"
+        s += "Result: \n"
+        s += self.chromosome_with_locus_str(self.first_chromosome_result) + "\n"
+        s += self.chromosome_with_locus_str(self.second_chromosome_result) + "\n"
+        return s
+
+
+class MutatedChromosome:
+
+    def __init__(self, chromosome: Chromosome):
+        self.chromosome_before = copy.deepcopy(chromosome)
+        self.mutation_index = 0
+        self.chromosome_mutated = self.mutation(chromosome)
 
     def mutation(self, chromosome: Chromosome):
-        index = random.randint(0, Chromosome.MAX_LEN - 1)
-        value = chromosome.alleles[index]
-        if value == 1:
-            value = 0
-        else:
+        self.mutation_index = random.randint(0, Chromosome.MAX_LEN - 1)
+        value = chromosome.alleles[self.mutation_index]
+        if value == 0:
             value = 1
-        chromosome.alleles[index] = value
+        else:
+            value = 0
 
-p = Population(config.POPULATION_SIZE)
-print(p)
-r = Roulette(p)
-c = Crossover(p)
-print("after")
-print(c.crossed_population)
+        chromosome.alleles[self.mutation_index] = value
+        chromosome.adaptation_assessment()
+        return chromosome
 
-""" print()
-r.rand()
-print(r.posterity) """
+    def chromosome_show_mutation(self, chromosome: Chromosome):
+        alleles_with_mutation_str = ""
+        for i in range(0, len(chromosome.alleles)):
+            if i == self.mutation_index:
+                alleles_with_mutation_str += "[" + str(chromosome.alleles[i]) + "]"
+            else :
+                alleles_with_mutation_str += str(chromosome.alleles[i])
+
+        return 'Chromosome id {chromosome.id} {alleles_with_mutation_str} Adaptation: {chromosome.adaptation}'\
+            .format(chromosome=chromosome, alleles_with_mutation_str=alleles_with_mutation_str)
+
+    def __str__(self):
+        return "Mutation index = {self.mutation_index}\n".format(self=self) \
+                + self.chromosome_show_mutation(self.chromosome_before) + "\n" \
+                + self.chromosome_show_mutation(self.chromosome_mutated) + "\n"
+
+
+p = Population(Config.POPULATION_SIZE)
+
+for i in range(0, Config.MAX_GENERATION):
+    if i != 0:
+        p = copy.deepcopy(g.crossed_population)
+
+    print("Generation number: " + str(i))
+    print(p)
+    r = Roulette(p)
+    print("Population after roulette:")
+    print(r.posterity)
+    g = Genetic(r.posterity)
+
+    print("Crossing step by step:")
+    for pair in g.crossed_pair_list:
+        print(pair)
+
+    print("Show mutation:")
+    for mutated_chromosome in g.mutated_chromosome_list:
+        print(mutated_chromosome)
+
+    print("Population after crossing and mutation")
+    print(g.crossed_population)
+
+    print("=========")
